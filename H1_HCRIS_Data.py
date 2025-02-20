@@ -104,12 +104,7 @@ unique_hcris4['source'] = 'weighted_average'
 
 # Combine final datasets
 final_hcris_data = pd.concat([unique_hcris1, unique_hcris2, unique_hcris3, unique_hcris4])
-# Drop duplicate 'year' columns if they exist
-final_hcris_data = final_hcris_data.loc[:, ~final_hcris_data.columns.duplicated()]
-
-# Only rename if 'year' does not exist
-if 'year' not in final_hcris_data.columns:
-    final_hcris_data = final_hcris_data.rename(columns={'fyear': 'year'}).sort_values(by=['provider_number', 'year'])
+final_hcris_data = final_hcris_data.rename(columns={'fyear': 'year'}).sort_values(by=['provider_number', 'year'])
 
 
 # Save final data ---------------------------------------------------------

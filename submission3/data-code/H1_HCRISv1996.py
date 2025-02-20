@@ -28,9 +28,9 @@ final_hcris_v1996 = None
 
 for year in range(1998, 2012):
     print('Processing year:', year)
-    alpha_path = f"/Users/ellenwu/econ470/Homework2/data/data/input/HCRIS_v1996/HospitalFY{year}/hosp_{year}_ALPHA.CSV"
-    numeric_path = f"/Users/ellenwu/econ470/Homework2/data/data/input/HCRIS_v1996/HospitalFY{year}/hosp_{year}_NMRC.CSV"
-    report_path = f"/Users/ellenwu/econ470/Homework2/data/data/input/HCRIS_v1996/HospitalFY{year}/hosp_{year}_RPT.CSV"
+    alpha_path = f"/Users/ellenwu/homework2-2/data/input/HCRISv1996/HospitalFY{year}/hosp_{year}_ALPHA.CSV"
+    numeric_path = f"/Users/ellenwu/homework2-2/data/input/HCRISv1996/HospitalFY{year}/hosp_{year}_NMRC.CSV"
+    report_path = f"/Users/ellenwu/homework2-2/data/input/HCRISv1996/HospitalFY{year}/hosp_{year}_RPT.CSV"
  
     col_names = ['RPT_REC_NUM', 'WKSHT_CD', 'LINE_NUM', 'CLMN_NUM', 'ITM_VAL_NUM']
     HCRIS_alpha = pd.read_csv(alpha_path, names=col_names, dtype=str)
@@ -60,4 +60,4 @@ for year in range(1998, 2012):
     final_hcris_v1996 = pd.concat([final_hcris_v1996, final_reports], ignore_index=True)
 
 # Save final dataset
-final_hcris_v1996.to_csv('/Users/ellenwu/econ470/Homework2/data/data/output/HCRIS_v1996.csv', index=False)
+final_hcris_v1996.to_csv('/Users/ellenwu/homework2-2/data/output/HCRIS_v1996.csv', index=False)

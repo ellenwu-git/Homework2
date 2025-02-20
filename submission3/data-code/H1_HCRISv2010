@@ -32,9 +32,9 @@ final_hcris_v2010 = pd.DataFrame()
 
 for year in range(2010, 2019):
     print(f"Processing year: {year}")
-    alpha_path = f"/Users/ellenwu/econ470/Homework2/data/data/input/HCRIS_v2010/HospitalFY{year}/hosp10_{year}_ALPHA.CSV"
-    numeric_path = f"/Users/ellenwu/econ470/Homework2/data/data/input/HCRIS_v2010/HospitalFY{year}/hosp10_{year}_NMRC.CSV"
-    report_path = f"/Users/ellenwu/econ470/Homework2/data/data/input/HCRIS_v2010/HospitalFY{year}/hosp10_{year}_RPT.CSV"
+    alpha_path = f"/Users/ellenwu/homework2-2/data/input/HCRISv2010/HospitalFY{year}/hosp10_{year}_ALPHA.CSV"
+    numeric_path = f"/Users/ellenwu/homework2-2/data/input/HCRISv2010/HospitalFY{year}/hosp10_{year}_NMRC.CSV"
+    report_path = f"/Users/ellenwu/homework2-2/data/input/HCRISv2010/HospitalFY{year}/hosp10_{year}_RPT.CSV"
 
     col_names = ['RPT_REC_NUM', 'WKSHT_CD', 'LINE_NUM', 'CLMN_NUM', 'ITM_VAL_NUM']
     hcris_alpha = pd.read_csv(alpha_path, names= col_names, dtype=str)
@@ -65,4 +65,4 @@ for year in range(2010, 2019):
     
     final_hcris_v2010 = pd.concat([final_hcris_v2010, final_reports], ignore_index=True)
 
-final_hcris_v2010.to_csv("/Users/ellenwu/econ470/Homework2/data/data/output/HCRIS_v2010.csv", index=False)
+final_hcris_v2010.to_csv("/Users/ellenwu/homework2-2/data/output/HCRIS_v2010.csv", index=False)
