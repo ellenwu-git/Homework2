@@ -1,0 +1,394 @@
+---
+title: "ECON 470 Homework 1"
+author: "Ellen Wu"
+format: pdf
+execute:
+    echo: false
+---
+####### The link to my repository: https://github.com/ellenwu-git/homework2.git 
+
+```{python}
+#| echo: false
+
+# Importing the libraries 
+# Import libraries
+import pandas as pd
+import numpy as np
+import os
+from sklearn.linear_model import LogisticRegression
+from sklearn.utils import resample
+from scipy.spatial.distance import mahalanobis
+from sklearn.neighbors import NearestNeighbors
+from scipy.spatial.distance import cdist
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
+import matplotlib.ticker as ticker
+import matplotlib
+import seaborn as sns
+from tabulate import tabulate
+from statsmodels.formula.api import ols
+from causalinference import CausalModel
+from sklearn.neighbors import NearestNeighbors
+from IPython.display import Markdown, display
+import warnings
+warnings.simplefilter('ignore')
+
+#Read output datasets
+HCRIS_Data = pd.read_csv('/Users/ellenwu/homework2-2/data/output/HCRIS_Data.csv')
+HCRISv1996 = pd.read_csv('/Users/ellenwu/homework2-2/data/output/HCRIS_v1996.csv')
+HCRISv2010 = pd.read_csv('/Users/ellenwu/homework2-2/data/output/HCRIS_v2010.csv')
+```
+
+# 1. How many hospitals filed more than one report in the same year? Show your answer as a line graph of the number of hospitals over time.
+
+```{python}
+#| echo: false
+
+# Count the number of reports per hospital per year
+report_counts = HCRIS_Data.groupby(['year', 'provider_number']).size().reset_index(name='report_count')
+
+# Filter hospitals that filed more than one report in the same year
+multiple_reports = report_counts[report_counts['report_count'] > 1]
+
+# Count the number of hospitals per year with multiple reports
+hospitals_per_year = multiple_reports.groupby('year').size().reset_index(name='num_hospitals')
+
+# Plot the result as a line graph
+plt.figure(figsize=(8, 5))
+plt.plot(hospitals_per_year['year'], hospitals_per_year['num_hospitals'], marker='o', linestyle='-', color='pink')
+plt.title('Number of Hospitals Filing More Than One Report per Year')
+plt.xticks(ticks=hospitals_per_year['year'].astype(int), labels=hospitals_per_year['year'].astype(int))
+years = hospitals_per_year['year'].astype(int)
+plt.xticks(ticks=years[::3], labels=years[::3])
+plt.xlabel('Year')
+plt.ylabel('Number of Hospitals')
+plt.grid(True)
+plt.show()
+```
+
+
+# 2. After removing/combining multiple reports, how many unique hospital IDs (Medicare provider numbers) exist in the data?
+
+```{python}
+#| echo: false
+
+unique_hospital_ids = HCRIS_Data['provider_number'].nunique()
+print(f'The number of unique hospital IDs is: {unique_hospital_ids}')
+
+hosp_count = HCRIS_Data.groupby('year').size().reset_index(name='hosp_count')
+
+# Count of unique hospitals per year
+plt.figure(figsize=(8, 5))
+plt.plot(hosp_count['year'].values, hosp_count['hosp_count'].values,
+         marker='o', linestyle='-', color='pink')
+plt.title('Figure 2: Unique Hospital IDs', fontsize=14)
+plt.xticks(ticks=hospitals_per_year['year'].astype(int), labels=hospitals_per_year['year'].astype(int))
+years = hospitals_per_year['year'].astype(int)
+plt.xticks(ticks=years[::3], labels=years[::3])
+plt.xlabel('Fiscal Year')
+plt.ylabel('Number of Hospital IDs')
+plt.ylim(0, hosp_count['hosp_count'].max() * 1.1)
+plt.grid(axis='y', color='gray', linestyle='--', alpha=0.5)
+plt.show()
+```
+
+# 3. What is the distribution of total charges (tot_charges in the data) in each year? Show your results with a “violin” plot, with charges on the y-axis and years on the x-axis. 
+
+```{python}
+#| echo: false
+
+# Filter and preprocess data
+charge_data = HCRIS_Data.copy()
+
+#Compute 1st and 99th percentile for total charges per year
+charge_data['tot_charges_low'] = charge_data.groupby('year')['tot_charges'].transform(lambda x: np.nanpercentile(x,1))
+charge_data['tot_charges_high'] = charge_data.groupby('year')['tot_charges'].transform(lambda x: np.nanpercentile(x,99))
+
+#Filter out extreme values and missing data
+charge_data = charge_data[
+    (charge_data['tot_charges'] > charge_data['tot_charges_low']) &
+    (charge_data['tot_charges'] < charge_data['tot_charges_high']) &
+    charge_data['tot_charges'].notna() & 
+    (charge_data['year'] > 1997)
+]
+
+#compute log of total charges
+charge_data['log_charge'] = np.log(charge_data['tot_charges'])
+
+#Prepare data for violin
+years = sorted(charge_data['year'].unique())
+data = [charge_data[charge_data['year'] == y]['log_charge'].dropna().values for y in years]
+
+#plot distribution of total charges
+fig, ax= plt.subplots(figsize = (8,5))
+parts = ax.violinplot(data, positions= years, showmedians= False)
+
+#customize violin plot 
+for pc in parts ['bodies']:
+    pc.set_facecolor('pink')
+    pc.set_alpha (0.3)
+
+for part in ['cbars','cmins', 'cmaxes']:
+    parts[part].set_color('blue')
+    parts[part].set_linewidth(0.5)
+
+#format plot 
+plt.title('Distribution of Total Charges', fontsize= 14)
+plt. xlabel('')
+plt.ylabel('Log \$')
+plt. grid (axis = 'y', color = 'gray', linestyle = '-', alpha = 0.5)
+plt.show()
+```
+
+# 4. What is the distribution of estimated prices in each year? Again present your results with a violin plot, and recall our formula for estimating prices from class. Be sure to do something about outliers and/or negative prices in the data.
+
+```{python}
+#| echo: false
+
+#Compute price data
+HCRIS_Data['discount_factor'] = 1 - HCRIS_Data['tot_discounts']/HCRIS_Data['tot_charges']
+HCRIS_Data['price_num'] = (
+    (HCRIS_Data['ip_charges'] + HCRIS_Data['icu_charges'] + HCRIS_Data['ancillary_charges']) *
+    HCRIS_Data['discount_factor']
+) - HCRIS_Data ['tot_mcare_payment']
+HCRIS_Data['price_denom'] = HCRIS_Data['tot_discharges'] - HCRIS_Data['mcare_discharges']
+HCRIS_Data['price'] = HCRIS_Data['price_num'] / HCRIS_Data['price_denom']
+
+#Data filtering
+price_data = HCRIS_Data[
+    (HCRIS_Data['price_denom'] > 100) &
+    (~HCRIS_Data['price_denom'].isna()) &
+    (HCRIS_Data['price_num'] > 0) &
+    (~HCRIS_Data['price_num'].isna()) &
+    (HCRIS_Data['price'] < 100000) &
+    (HCRIS_Data['beds'] > 30) &
+    (~HCRIS_Data['beds'].isna())
+]
+
+# Data preparation 
+years= sorted(price_data['year'].unique())
+data = [price_data[price_data['year'] == year]['price'].dropna().values for year in years]
+
+# Ensure data is formatted correctly
+data = [np.array(arr) for arr in data if len(arr) > 0]  # Convert to arrays & remove empty ones
+years = np.arange(len(data))  # Ensure x-axis matches number of datasets
+
+# Only plot if data is valid
+if len(data) > 0 and len(data) == len(years):
+    fig, ax = plt.subplots(figsize=(8, 5))
+    parts = ax.violinplot(data, positions=years, showmedians=False, showextrema=False)
+
+    # Customize violin plot
+    for pc in parts['bodies']:
+        pc.set_facecolor('pink')
+        pc.set_alpha(0.3)
+        
+    # Format plot
+    plt.ylim(0, 30000)
+    plt.title('Distribution of Hospital Prices', fontsize=14)
+    plt.xlabel('Year')
+    plt.ylabel('Price')
+    plt.grid(axis='y', color='gray', linestyle='-', alpha=0.5)
+    plt.show()
+else:
+    print("Error: Data and years length mismatch!")
+```
+
+# 5. Calculate the average price among penalized versus non-penalized hospitals.
+
+```{python}
+#| echo: false
+
+# Load dataset
+HCRIS_Data = pd.read_csv('/Users/ellenwu/homework2-2/data/output/HCRIS_Data.csv')
+
+# Filter data to only include year 2012
+hcris_2012 = HCRIS_Data[HCRIS_Data['year'] == 2012].copy()
+
+# Handle missing payments
+hcris_2012['hvbp_payment'] = hcris_2012['hvbp_payment'].fillna(0)
+hcris_2012['hrrp_payment'] = hcris_2012['hrrp_payment'].fillna(0).abs()
+
+# Calculate estimated price
+hcris_2012['discount_factor'] = 1 - (hcris_2012['tot_discounts'] / hcris_2012['tot_charges'])
+hcris_2012['price_num'] = (hcris_2012['ip_charges'] + hcris_2012['icu_charges'] + hcris_2012['ancillary_charges']) * hcris_2012['discount_factor'] - hcris_2012['tot_mcare_payment']
+hcris_2012['price_denom'] = hcris_2012['tot_discharges'] - hcris_2012['mcare_discharges']
+hcris_2012['price'] = hcris_2012['price_num'] / hcris_2012['price_denom']
+
+# Define penalty
+hcris_2012['penalty'] = (hcris_2012['hrrp_payment'] + hcris_2012['hvbp_payment']) < 0
+
+# Apply data cleaning filters
+hcris_2012 = hcris_2012[(hcris_2012['price_denom'] > 100) & (hcris_2012['price_num'] > 0) & (hcris_2012['price'] > 0)]
+hcris_2012 = hcris_2012[hcris_2012['beds'] > 30]
+hcris_2012 = hcris_2012[hcris_2012['price'] < 100000]  
+
+# Calculate mean price for penalized vs non-penalized hospitals
+mean_penalized = hcris_2012.loc[hcris_2012['penalty'] == 1, 'price'].mean()
+mean_non_penalized = hcris_2012.loc[hcris_2012['penalty'] == 0, 'price'].mean()
+
+# Create formatted results
+price_summary = pd.DataFrame({
+    "Penalty Status": ["Penalized", "Non-Penalized"],
+    "Average Price": [f"${mean_penalized:,.2f}", f"${mean_non_penalized:,.2f}"]
+})
+
+# Sample DataFrame for price summary
+price_summary = pd.DataFrame({
+    "Penalty Status": ["Penalized", "Non-Penalized"],
+    "Average Price": [10171.54, 9651.82]
+})
+
+# Save table as Markdown
+md_table = price_summary.to_markdown(index=False)
+with open("results/table1_penalty_status.md", "w") as f:
+    f.write("#### **Table 1: Avg. Price for Penalty Status**\n\n")
+    f.write(md_table)
+
+# Save table as LaTeX for PDF conversion
+latex_table = price_summary.to_latex(index=False, escape=False, column_format="ll")
+with open("results/table1_penalty_status.tex", "w") as f:
+    f.write("\\section*{Table 1: Avg. Price for Penalty Status}\n")
+    f.write(latex_table)
+
+# Display table in Notebook (for Jupyter)
+display(Markdown("#### **Table 1: Avg. Price for Penalty Status**"))
+display(Markdown(md_table))
+```
+
+# 6. Provide a table of the average price among treated/control groups for each quartile.
+
+```{python}
+#| echo: false
+
+# Ensure pen_data_2012 is defined and contains necessary columns
+if 'pen_data_2012' not in globals() or pen_data_2012.empty:
+    pen_data_2012 = price_data[price_data['year'] == 2012].copy()
+    pen_data_2012['penalty'] = ((pen_data_2012['hvbp_payment'].fillna(0) - pen_data_2012['hrrp_payment'].fillna(0).abs()) < 0).astype(int)
+    beds_q1 = pen_data_2012['beds'].quantile(0.25)
+    beds_q2 = pen_data_2012['beds'].quantile(0.50)
+    beds_q3 = pen_data_2012['beds'].quantile(0.75)
+    beds_q4 = pen_data_2012['beds'].max()
+    pen_data_2012['bed_quart'] = np.select(
+        [
+            pen_data_2012['beds'] < beds_q1,
+            (pen_data_2012['beds'] >= beds_q1) & (pen_data_2012['beds'] < beds_q2),
+            (pen_data_2012['beds'] >= beds_q2) & (pen_data_2012['beds'] < beds_q3),
+            (pen_data_2012['beds'] > beds_q3) & (pen_data_2012['beds'] <= beds_q4),
+        ],
+        [1, 2, 3, 4],
+        default=0
+    )
+    pen_data_2012 = pen_data_2012[pen_data_2012['bed_quart'] > 0]
+
+pen_data_2012['beds_quartile'] = pd.qcut(pen_data_2012['beds'], 4, labels=[1, 2, 3, 4])
+
+# Create indicator variables for each quartile
+for i in range(1, 5):
+    pen_data_2012[f'quartile_{i}'] = (pen_data_2012['beds_quartile'] == i).astype(int)
+
+
+# Calculate average price for treated and control groups within each quartile
+Avg_per_group = []
+for i in range(1, 5):
+    treated_mean = pen_data_2012.loc[(pen_data_2012[f'quartile_{i}'] == 1) & (pen_data_2012['penalty'] == 1), 'price'].mean()
+    control_mean = pen_data_2012.loc[(pen_data_2012[f'quartile_{i}'] == 1) & (pen_data_2012['penalty'] == 0), 'price'].mean()
+    Avg_per_group.append({'Quartile': i, 'Penalized Avg. Price': round(treated_mean, 2), 'Non Penalized Avg. Price': round(control_mean, 2)})
+
+results_df = pd.DataFrame(Avg_per_group)
+results_df[['Penalized Avg. Price', 'Non Penalized Avg. Price']] = results_df[
+    ['Penalized Avg. Price', 'Non Penalized Avg. Price']
+].applymap(lambda x: f"${x:,.2f}")
+
+# Ensure "results" directory exists
+os.makedirs("results", exist_ok=True)
+
+# Save table as Markdown
+md_table = results_df.to_markdown(index=False)
+with open("results/table2_avg_price_quartiles.md", "w") as f:
+    f.write("#### **Table 2: Avg. Price Among Treated & Control Groups**\n\n")
+    f.write(md_table)
+
+# Save table as LaTeX for PDF conversion
+latex_table = results_df.to_latex(index=False, escape=False, column_format="lcc")
+with open("results/table2_avg_price_quartiles.tex", "w") as f:
+    f.write("\\section*{Table 2: Avg. Price Among Treated & Control Groups}\n")
+    f.write(latex_table)
+
+# Display table in Notebook (for Jupyter)
+display(Markdown("#### **Table 2: Avg. Price Among Treated & Control Groups**"))
+display(Markdown(md_table))
+```
+
+
+# 7. Find the average treatment effect using each of the following estimators, and present your results in a single table:
+# - Nearest neighbor matching (1-to-1) with inverse variance distance based on quartiles of bed size
+
+# - Nearest neighbor matching (1-to-1) with Mahalanobis distance based on quartiles of bed size
+
+# - Inverse propensity weighting, where the propensity scores are based on quartiles of bed size
+
+# - Simple linear regression, adjusting for quartiles of bed size using dummy variables and appropriate interactions as discussed in class
+
+```{python}
+#| echo: false
+
+# Create Bed Quartile Dummies for Covariates
+bed_quarts = pd.get_dummies(pen_data_2012['bed_quart'], prefix='bed_quart').iloc[:, :-1] * 1
+bed_quarts = bed_quarts.sub(bed_quarts.mean(axis=0), axis=1)  # Standardizing covariates
+
+# Ensure Treatment Variable is Binary 
+pen_data_2012['penalty'] = pen_data_2012['penalty'].astype(int)  # Convert to integer (0 or 1)
+
+# Extract Variables for Causal Model
+treatment = pen_data_2012['penalty'].values  # Binary treatment variable
+outcome = pen_data_2012['price'].values  # Outcome variable (hospital price)
+covariates = bed_quarts.values  # Covariates (bed quartiles) as NumPy matrix
+
+# Initialize the Causal Model
+cm = CausalModel(Y=outcome, D=treatment, X=covariates)
+
+print(cm)  
+
+# Estimate Treatment Effects 
+results = pd.DataFrame(index=['ATE', 'SE'], columns=['NN-INV', 'NN-MAH', 'IPW', 'OLS'])
+
+# Nearest Neighbor Matching with Inverse Variance Distance
+cm.est_via_matching(weights='inv', matches=1, bias_adj=True)
+results.loc['ATE', 'NN-INV'] = cm.estimates['matching']['ate']
+results.loc['SE', 'NN-INV'] = cm.estimates['matching']['ate_se']
+
+# Nearest Neighbor Matching with Mahalanobis Distance
+cm.est_via_matching(weights='maha', matches=1, bias_adj=True)
+results.loc['ATE', 'NN-MAH'] = cm.estimates['matching']['ate']
+results.loc['SE', 'NN-MAH'] = cm.estimates['matching']['ate_se']
+
+# Inverse Propensity Weighting
+cm.est_propensity()  # Estimate propensity scores
+cm.est_via_weighting()
+results.loc['ATE', 'IPW'] = cm.estimates['weighting']['ate']
+results.loc['SE', 'IPW'] = cm.estimates['weighting']['ate_se']
+
+# OLS Regression, adjusting for bed quartiles using dummy variables & interactions
+cm.est_via_ols(adj=2)  # `adj=2` means it includes covariates + interactions
+results.loc['ATE', 'OLS'] = cm.estimates['ols']['ate']
+results.loc['SE', 'OLS'] = cm.estimates['ols']['ate_se']
+
+# Convert DataFrame to Markdown format using tabulate
+markdown_table = tabulate(results, headers="keys", tablefmt="github")
+
+# Display as Markdown
+display(Markdown("### **Average Treatment Effect Estimates**"))
+display(Markdown(f"```\n{markdown_table}\n```"))
+display(Markdown(results.to_markdown()))
+```
+
+# 8. With these different treatment effect estimators, are the results similar, identical, very different?
+####### The results are very similar across all estimators, with the average treatment effect (ATE) being the same across all four estimators. The standard error (SE) slightly vary, but still very close.
+
+
+# 9. Do you think you’ve estimated a causal effect of the penalty? Why or why not? (just a couple of sentences)
+####### Through matching (nearest neighbor) and inverse propensity weighting, causal identification strengthens by balancing observable covariates between penalized and non-penalized hospitals. However, these methods only control for observed confounders, meaning unmeasured factors could still bias the estimates. An example of this could be hospital management quality. Therefore, while the estimates are close to a causal effect, they are not fully causal unless we assume all relevant confounders have been accounted for.
+
+# 10. Briefly describe your experience working with these data (just a few sentences). Tell me one thing you learned and one thing that really aggravated or surprised you.
+####### Working with this data was definitely a steep learning curve. I was feeling a lot of frustration because even though I was running the data cleaning code we were provided in class, it would still produce me a dataset with missing years. In many attempts I would be missing values for 2012-2015. It definitely took some time to debug this error by running each code line by line, which eventually paid off.
